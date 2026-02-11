@@ -10,7 +10,7 @@ TOLERANCE = 0.05           # 5% tolerance
 
 
 def validate_receipt(data: dict, skip_duplicate: bool = False) -> dict:
-    checks = {}
+    results = []
     passed = True
 
     # ---------- Required Fields ----------
@@ -18,35 +18,38 @@ def validate_receipt(data: dict, skip_duplicate: bool = False) -> dict:
     missing = [f for f in required if data.get(f) is None]
 
     if missing:
-        checks["required_fields"] = {
-            "pass": False,
-            "missing": missing
-        }
+        results.append({
+            "status": "error",
+            "title": "Required Fields",
+            "message": f"Missing fields: {', '.join(missing)}"
+        })
         passed = False
-        # Return early if fields are missing to prevent subsequent errors
         return {
             "passed": passed,
-            "checks": checks
+            "results": results
         }
     else:
-        checks["required_fields"] = {
-            "pass": True,
-            "details": "All required fields present"
-        }
+        results.append({
+            "status": "success",
+            "title": "Required Fields",
+            "message": "All required fields present"
+        })
 
     # ---------- Date Format ----------
     date_val = data.get("date")
     try:
         datetime.strptime(str(date_val), "%Y-%m-%d")
-        checks["date_format"] = {
-            "pass": True,
-            "details": f"Valid date: {date_val}"
-        }
+        results.append({
+            "status": "success",
+            "title": "Date Format",
+            "message": f"Valid date: {date_val}"
+        })
     except Exception:
-        checks["date_format"] = {
-            "pass": False,
-            "details": f"Invalid date format: {date_val}"
-        }
+        results.append({
+            "status": "error",
+            "title": "Date Format",
+            "message": f"Invalid date format: {date_val}"
+        })
         passed = False
 
     # ---------- Amount & Tax Validation ----------
@@ -64,25 +67,27 @@ def validate_receipt(data: dict, skip_duplicate: bool = False) -> dict:
 
     # ---------- Total Validation ----------
     if amount > 0:
-        checks["total_amount"] = {
-            "pass": True,
-            "value": f"₹{amount:.2f}"
-        }
+        results.append({
+            "status": "success",
+            "title": "Total Amount",
+            "message": f"Amount ₹{amount:.2f} is valid"
+        })
     else:
-        checks["total_amount"] = {
-            "pass": False,
-            "details": "Invalid amount value"
-        }
+        results.append({
+            "status": "error",
+            "title": "Total Amount",
+            "message": "Invalid amount value"
+        })
         passed = False
 
-    # ---------- Tax Rate Validation (FIXED) ----------
+    # ---------- Tax Rate Validation ----------
     if tax == 0.0:
-        checks["tax_rate"] = {
-            "pass": True,
-            "details": "No tax applied"
-        }
+        results.append({
+            "status": "success",
+            "title": "Tax Rate",
+            "message": "No tax applied"
+        })
     else:
-        # Try both interpretations
         subtotal_option_1 = float(amount - tax)
         subtotal_option_2 = float(amount)
 
@@ -91,12 +96,10 @@ def validate_receipt(data: dict, skip_duplicate: bool = False) -> dict:
         actual_rate = 0.0
 
         for subtotal in [subtotal_option_1, subtotal_option_2]:
-            subtotal = float(subtotal) # Explicit cast for type checkers
+            subtotal = float(subtotal)
             if subtotal <= 0:
                 continue
             
-            # rate = tax / subtotal 
-            # Check safely for division
             try:
                 rate = float(tax) / subtotal
             except ZeroDivisionError:
@@ -109,47 +112,52 @@ def validate_receipt(data: dict, skip_duplicate: bool = False) -> dict:
                 break
 
         if valid:
-            checks["tax_rate"] = {
-                "pass": True,
-                "details": (
+            results.append({
+                "status": "success",
+                "title": "Tax Rate",
+                "message": (
                     f"Tax rate OK "
                     f"({actual_rate*100:.2f}%, Subtotal ₹{used_subtotal:.2f})"
                 )
-            }
+            })
         else:
-            checks["tax_rate"] = {
-                "pass": False,
-                "details": (
+            results.append({
+                "status": "error",
+                "title": "Tax Rate",
+                "message": (
                     f"Tax mismatch. Expected ~{EXPECTED_TAX_RATE*100:.1f}% "
                     f"but got ₹{tax:.2f} on amount ₹{amount:.2f}"
                 )
-            }
+            })
             passed = False
 
     # ---------- Duplicate Detection ----------
     if not skip_duplicate:
         if receipt_exists(data.get("bill_id")):
-            checks["is_duplicate"] = {
-                "pass": False,
-                "details": "Duplicate receipt found"
-            }
+            results.append({
+                "status": "error",
+                "title": "Duplicate Detection",
+                "message": "Duplicate receipt found in database"
+            })
             passed = False
         else:
-            checks["is_duplicate"] = {
-                "pass": True,
-                "details": "No duplicate found"
-            }
+            results.append({
+                "status": "success",
+                "title": "Duplicate Detection",
+                "message": "No duplicate found"
+            })
     else:
-        checks["is_duplicate"] = {
-            "pass": True, # Skipped, so consider it passed for this run
-            "details": "Duplicate check skipped"
-        }
-
+        results.append({
+            "status": "success",
+            "title": "Duplicate Detection",
+            "message": "Duplicate check skipped"
+        })
 
     return {
         "passed": passed,
-        "checks": checks
+        "results": results
     }
+
 
 
 def validation_ui():
